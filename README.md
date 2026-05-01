@@ -5,6 +5,11 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)]()
+[![GitHub stars](https://img.shields.io/github/stars/minirr890112-byte/claude-intel-monitor?style=social)](https://github.com/minirr890112-byte/claude-intel-monitor)
+
+## Why This Tool? / 为什么需要这个工具？
+
+In 2025–2026, the Chinese developer community has repeatedly reported "intelligence degradation" in Claude and GPT models — code completions becoming shallow and skipping critical logic, reasoning becoming jumpy and conclusion-first, math capabilities declining with frequent hallucinations, and replies becoming敷衍 (perfunctory) and templated. Anthropic and OpenAI do not proactively report regressions. **claude-intel-monitor** is an independent, third-party quantitative detection tool that benchmarks AI models against a fixed set of 30 curated questions across Math, Reasoning, and Code. All questions are in Chinese, specifically designed around degradation patterns reported by the Chinese developer community.
 
 ## 为什么需要这个工具？
 
@@ -69,6 +74,8 @@ claude-intel-monitor watch --model claude-sonnet-4 --provider anthropic --interv
 | OpenAI | `OPENAI_API_KEY` | gpt-4o, gpt-4.1 |
 | DeepSeek | `DEEPSEEK_API_KEY` | deepseek-chat |
 
+> 🏆 **Featured Baseline**: DeepSeek scored **91.1% (27/30)** as the first live test baseline — setting a high bar for intelligence monitoring across all providers.
+
 ## 输出示例
 
 ```
@@ -90,9 +97,64 @@ claude-intel-monitor watch --model claude-sonnet-4 --provider anthropic --interv
 ⚠️ code: 轻微下降 6.2% (current=70.0%, baseline=76.2%)
 ```
 
+## Examples
+
+### Scenario 1: Detect a Model Regression
+
+```bash
+# Set a baseline when the model is performing well
+claude-intel-monitor baseline --model claude-sonnet-4 --provider anthropic
+
+# A week later, test again and compare
+claude-intel-monitor test --model claude-sonnet-4 --provider anthropic
+```
+
+If scores drop more than 5% in any category, you get a ⚠️ warning. More than 10% triggers a 🚨 critical alert — time to investigate or switch models.
+
+### Scenario 2: Compare Providers Side-by-Side
+
+```bash
+# Test Claude
+claude-intel-monitor test --model claude-sonnet-4 --provider anthropic
+
+# Test GPT-4o
+claude-intel-monitor test --model gpt-4o --provider openai
+
+# Test DeepSeek
+claude-intel-monitor test --model deepseek-chat --provider deepseek
+
+# View all results in history
+claude-intel-monitor history
+```
+
+Use `claude-intel-monitor history` to see a trend table comparing all tested models over time.
+
+### Scenario 3: Continuous Monitoring (CI/CD)
+
+```bash
+# Run every 6 hours in the background
+claude-intel-monitor watch --model claude-sonnet-4 --provider anthropic --interval 6h &
+
+# Or add to a cron job for daily checks
+0 9 * * * claude-intel-monitor test --model claude-sonnet-4 --provider anthropic >> ~/intel-monitor.log
+```
+
+Ideal for teams that rely on a specific model and need early warning if its performance silently degrades.
+
 ## 项目动机
 
 这个工具从 **HermesMade** 项目的真实痛点数据中诞生。在 2026 年 4 月的中国开发者社区扫描中，"Claude/GPT 降智" 是 Top 3 最热话题。我们不想只抱怨，决定做一个可量化的工具。
+
+## Also available on ClawHub
+
+[ClawHub](https://clawhub.ai) is an AI-native package registry. You can install and run `claude-intel-monitor` directly from ClawHub:
+
+```bash
+# Install from ClawHub
+claw install claude-intel-monitor
+```
+
+All features, benchmarks, and providers work identically. ClawHub also provides built-in API key management and sandboxed execution for worry-free model testing.
 
 ## 许可证
 
