@@ -8,7 +8,8 @@ version = "1.1.0"
 description = "检测 Claude/GPT/DeepSeek 是否降智 — Claude Intelligence Degradation Monitor"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE*"]
 authors = [{name = "HermesMade"}]
 keywords = ["claude", "ai", "benchmark", "monitoring", "degradation", "降智"]
 classifiers = [
