@@ -28,6 +28,9 @@ from .benchmarks.questions import ALL_QUESTIONS
 from .providers import get_provider, ProviderError
 from .evaluator import IntelEvaluator, BenchmarkReport
 from .history import save_report, get_history, get_baseline, DEFAULT_DB_PATH
+from .quality import analyze_quality
+from .zenmux import check_zenmux_installed, detect_current_config, generate_setup_guide
+from .switch_guide import pick_best, render_table as render_switch_table, ALTERNATIVES
 
 console = Console()
 
@@ -104,7 +107,7 @@ def _print_report(report: BenchmarkReport, show_details: bool = False):
 # ─── CLI Commands ───────────────────────────────────────────────
 
 @click.group()
-@click.version_option(version="0.1.0", message="claude-intel-monitor v0.1.0")
+@click.version_option(version="1.1.0", message="claude-intel-monitor v1.1.0")
 def main():
     """🧠 Claude/GPT 降智检测工具 — 自动测试 AI 模型是否偷偷变笨."""
     pass
@@ -383,6 +386,164 @@ def watch(interval, model, provider):
         asyncio.run(_watch_loop())
     except KeyboardInterrupt:
         console.print("\n👋 监控已停止")
+
+
+@main.command()
+@click.option("--text", "-t", default=None, help="Text to analyze for quality")
+@click.option("--file", "-f", default=None, type=click.Path(exists=True), help="File to analyze for quality")
+@click.option("--category", "-c", default="unknown", help="Category hint: code, reasoning, math")
+def quality_cmd(text, file, category):
+    """分析响应质量 — 检测thinking跳步、代码完整性、推理深度。
+
+    \b
+    Examples:
+      claude-intel-monitor quality -t "这是一个很短的回复..."
+      claude-intel-monitor quality -f response.txt -c code
+    """
+    if text:
+        content = text
+    elif file:
+        content = Path(file).read_text(encoding="utf-8")
+    else:
+        console.print("[red]请指定 --text 或 --file[/red]")
+        return
+
+    result = analyze_quality(content, category)
+
+    # Pretty print
+    console.print()
+    console.print(Panel.fit(
+        f"[bold]{result.overall_quality:.1%}[/bold]",
+        title="🔬 [bold]响应质量分析[/bold]",
+        border_style="cyan",
+    ))
+
+    table = Table(title="📊 质量维度", border_style="dim")
+    table.add_column("维度", style="cyan")
+    table.add_column("得分", justify="center")
+    table.add_column("说明")
+
+    def _color_bar(score):
+        color = "green" if score >= 0.7 else "yellow" if score >= 0.4 else "red"
+        return f"[{color}]{score:.1%}[/{color}]"
+
+    table.add_row("冗长度", _color_bar(result.verbosity_score), "内容是否充实")
+    table.add_row("推理深度", _color_bar(result.reasoning_depth_score), "推理步骤是否充分")
+    table.add_row("完整性", _color_bar(result.completeness_score), "回答是否完整")
+    table.add_row("推理步数", f"{result.reasoning_steps}", "检测到的推理标记数")
+    table.add_row("响应长度", f"{result.response_length:,} chars", "")
+
+    console.print(table)
+
+    if result.flags:
+        console.print()
+        console.print("[bold yellow]⚠️  检测到以下问题:[/bold yellow]")
+        for flag in result.flags:
+            icon = {"thinking_skip": "⏭️", "low_depth": "📉", "short_response": "✂️", "template_response": "📋"}.get(flag, "🔶")
+            desc = {
+                "thinking_skip": "推理跳步 — 模型跳过了思考过程",
+                "low_depth": "深度不足 — 推理过于浅层",
+                "short_response": "回复过短 — 可能敷衍回答",
+                "template_response": "模板化回复 — 缺乏针对性",
+            }.get(flag, flag)
+            console.print(f"  {icon} [bold]{flag}[/bold]: {desc}")
+
+    console.print(f"\n[dim]💡 总结: {result.summary}[/dim]")
+
+
+@main.command()
+def zenmux():
+    """ZenMux 状态 — 检查ZenMux安装状态并生成配置指南。
+
+    检测系统中是否安装了ZenMux，显示当前配置，
+    并输出Docker Compose设置指南用于智能路由绕行降智。
+    """
+    console.print()
+    console.print(Panel.fit(
+        "[bold]ZenMux — AI 模型智能路由器[/bold]\n"
+        "自动检测降智 + 无缝切换到备用模型",
+        border_style="cyan",
+    ))
+
+    # Check ZenMux installation
+    installed = check_zenmux_installed()
+    if installed:
+        console.print("  ✅ [green]ZenMux 已安装[/green]")
+    else:
+        console.print("  ❌ [red]ZenMux 未安装[/red]")
+        console.print("  [dim]安装: pip install zenmux 或 docker pull zenmux/zenmux[/dim]")
+
+    # Check config
+    config = detect_current_config()
+    if config:
+        console.print(f"\n  📁 [bold]检测到配置:[/bold] [dim]{config}[/dim]")
+    else:
+        console.print("\n  📁 [bold]未检测到配置[/bold]")
+
+    # Setup guide
+    console.print()
+    console.print("[bold]📖 快速设置指南:[/bold]")
+    guide = generate_setup_guide()
+    for line in guide.split("\n"):
+        if line.strip():
+            console.print(f"  [dim]{line}[/dim]")
+
+    console.print()
+    console.print("[bold cyan]💡 推荐架构:[/bold cyan]")
+    console.print("  Anthropic (主) → OpenRouter Claude (备用1) → DeepSeek V3 (备用2)")
+
+
+@main.command()
+@click.option("--scenario", "-s", default="degraded", type=click.Choice(["degraded", "cost", "quality", "all"]), help="推荐场景")
+@click.option("--budget", "-b", default=None, type=float, help="每100万token预算(美元)")
+def switch(scenario, budget):
+    """模型切换推荐 — 根据场景和预算推荐最佳替代模型。
+
+    \b
+    场景:
+      degraded  — 检测到降智时推荐替代方案
+      cost      — 按性价比排名
+      quality   — 按质量评分排名
+      all       — 显示所有可用替代模型
+
+    \b
+    Examples:
+      claude-intel-monitor switch                    # 降智替代推荐
+      claude-intel-monitor switch -s cost -b 2.0    # 预算$2/百万token
+      claude-intel-monitor switch -s all             # 全部替代方案
+    """
+    console.print()
+    console.print(Panel.fit(
+        "[bold]🔄 模型切换推荐引擎[/bold]",
+        border_style="cyan",
+    ))
+
+    if scenario == "all":
+        # Show all alternatives
+        for ctx, alternatives in ALTERNATIVES.items():
+            ctx_label = {
+                "claude-opus-4": "Opus 4 降级替代",
+                "cloud-degraded": "云端降智通用替代",
+                "two-tier": "二级分流策略",
+            }.get(ctx, ctx)
+            console.print(f"\n[bold cyan]📌 {ctx_label}[/bold cyan]")
+            render_switch_table(alternatives)
+    else:
+        # Pick best recommendation
+        best = pick_best(scenario, budget)
+        if best:
+            console.print(f"\n[bold green]⭐ 推荐: {best.name}[/bold green]")
+            console.print(f"   评分: {best.rating}/10  |  成本: ${best.cost_per_1m_tokens}/百万token")
+            console.print(f"   Provider: {best.provider}  |  Model: {best.model_id}")
+            console.print(f"   优势: {', '.join(best.pros[:3])}")
+            if best.setup_env:
+                console.print(f"   [dim]环境变量: {best.setup_env}[/dim]")
+        else:
+            # Show all in a table
+            all_alts = []
+            for alts in ALTERNATIVES.values():
+                all_alts.extend(alts)
+            render_switch_table(list(set(all_alts)))
 
 
 if __name__ == "__main__":

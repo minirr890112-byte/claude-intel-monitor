@@ -1,21 +1,24 @@
 # 🧠 Claude Intel Monitor
 
 > **检测 Claude / GPT / DeepSeek 是否偷偷变笨**  
-> Detect intelligence degradation in AI models with standardized benchmarks
+> Detect intelligence degradation in AI models with standardized benchmarks + response quality analysis
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)]()
 [![GitHub stars](https://img.shields.io/github/stars/minirr890112-byte/claude-intel-monitor?style=social)](https://github.com/minirr890112-byte/claude-intel-monitor)
 
-## Why This Tool? / 为什么需要这个工具？
+## v1.1.0 新增 🆕
 
-In 2025–2026, the Chinese developer community has repeatedly reported "intelligence degradation" in Claude and GPT models — code completions becoming shallow and skipping critical logic, reasoning becoming jumpy and conclusion-first, math capabilities declining with frequent hallucinations, and replies becoming敷衍 (perfunctory) and templated. Anthropic and OpenAI do not proactively report regressions. **claude-intel-monitor** is an independent, third-party quantitative detection tool that benchmarks AI models against a fixed set of 30 curated questions across Math, Reasoning, and Code. All questions are in Chinese, specifically designed around degradation patterns reported by the Chinese developer community.
+- **响应质量分析** (`quality`): 检测 thinking 跳步、推理深度、代码完整性，0-1 综合评分
+- **ZenMux 智能绕行** (`zenmux`): Docker Compose 一键部署，主端点降智时自动切换备用模型
+- **模型切换推荐** (`switch`): 按场景+预算推荐最佳替代模型，含评分/成本/社区评价
+- **质量感知告警**: benchmark 自动检测响应质量 < 30% 触发 🚨 严重告警
 
 ## 为什么需要这个工具？
 
-2025-2026年，中文开发者社区反复报道 Claude/GPT 存在"降智"现象：
+2025-2026年，中文开发者社区反复报道 AI 模型"降智"现象：
 - 代码补全变简单，跳过关键逻辑
-- 推理时跳步、结论先行
+- 推理时跳步、结论先行  
 - 数学能力下降，频繁出现幻觉
 - 回复变得敷衍、模板化
 
@@ -25,23 +28,38 @@ Anthropic 和 OpenAI 不会主动报告退化。**claude-intel-monitor** 是独�
 
 ```bash
 # 安装
-pip install claude-intel-monitor
+pip install git+https://github.com/minirr890112-byte/claude-intel-monitor.git
 
-# 测试某个模型（需要 API key）
+# 基准测试
 claude-intel-monitor test --model claude-sonnet-4 --provider anthropic
 
-# 自测模式（无需 API）
-claude-intel-monitor test --self
+# 响应质量分析
+claude-intel-monitor quality -f response.txt -c code
 
-# 查看历史趋势
+# ZenMux 智能路由
+claude-intel-monitor zenmux
+
+# 模型切换推荐
+claude-intel-monitor switch -s degraded
+
+# 历史趋势
 claude-intel-monitor history
-
-# 设置基线（用于后续检测退化）
-claude-intel-monitor baseline --model claude-sonnet-4
 
 # 持续监控
 claude-intel-monitor watch --model claude-sonnet-4 --provider anthropic --interval 6h
 ```
+
+## 命令行一览
+
+| 命令 | 说明 | v1.1 新增 |
+|------|------|:---:|
+| `test` | 运行基准测试（30题 Math/Reasoning/Code） | — |
+| `baseline` | 设定基线用于后续对比 | — |
+| `history` | 查看历史趋势 | — |
+| `watch` | 持续监控（定时自动测试） | — |
+| `quality` | 响应质量分析（thinking跳步/深度/完整性）| ✅ |
+| `zenmux` | ZenMux 状态检测 + 配置指南 | ✅ |
+| `switch` | 模型切换推荐（按场景+预算） | ✅ |
 
 ## 基准测试题
 
@@ -55,16 +73,38 @@ claude-intel-monitor watch --model claude-sonnet-4 --provider anthropic --interv
 
 所有题目是中文的，专门针对中文社区报告的降智模式设计。
 
-## 检测原理
+## 检测原理 (v1.1)
 
 ```
+                    ┌─────────────┐
 题目 → API请求 → 模型回答 → Lambda校验 → 加权评分 → 对比基线
+                    │                            │
+                    ▼                            ▼
+              质量分析器                  质量感知告警
+          (thinking/深度/代码)         (< 30% → 🚨)
 ```
 
-- 每个题目有独立的 `check` 函数验证答案
-- 不使用 AI 评分（避免偏见）
-- 历史数据存储在 SQLite（`~/.claude-intel-monitor/history.db`）
-- 退化阈值：5% 警告，10% 严重告警
+**v1.1 双层检测**: 传统 benchmark（正确与否）+ 响应质量分析（如何回答），全方位捕捉降智信号。
+
+## 响应质量分析
+
+`quality` 命令提供 4 维质量评分：
+
+```
+🔬 响应质量分析         85.0%
+
+📊 质量维度
+┌──────────┬────────┬──────────┐
+│ 维度     │ 得分   │ 说明     │
+├──────────┼────────┼──────────┤
+│ 冗长度   │ 78.0%  │ 内容充实 │
+│ 推理深度 │ 92.0%  │ 推理充分 │
+│ 完整性   │ 85.0%  │ 回答完整 │
+│ 推理步数 │ 12     │ 丰富     │
+└──────────┴────────┴──────────┘
+```
+
+同时检测 thinking 跳步（中英文推理标记）、代码截断/省略、模板化回复等降智信号。
 
 ## 支持的大模型
 
@@ -74,7 +114,37 @@ claude-intel-monitor watch --model claude-sonnet-4 --provider anthropic --interv
 | OpenAI | `OPENAI_API_KEY` | gpt-4o, gpt-4.1 |
 | DeepSeek | `DEEPSEEK_API_KEY` | deepseek-chat |
 
-> 🏆 **Featured Baseline**: DeepSeek scored **91.1% (27/30)** as the first live test baseline — setting a high bar for intelligence monitoring across all providers.
+> 🏆 **Featured Baseline**: DeepSeek scored **91.1% (27/30)** as the first live test baseline.
+
+## ZenMux 智能路由 (v1.1 新增)
+
+自动检测降智 + 无缝切换备用模型：
+
+```bash
+claude-intel-monitor zenmux   # 一键检测+生成配置
+
+# 推荐架构:
+# Anthropic (主) → OpenRouter Claude (备用1) → DeepSeek V3 (备用2)
+```
+
+`zenmux` 命令检测系统安装状态、扫描现有配置、生成 Docker Compose 一键部署指南。
+
+## 模型切换引擎 (v1.1 新增)
+
+当检测到降智时，智能推荐替代方案：
+
+```bash
+claude-intel-monitor switch                  # 降智替代推荐
+claude-intel-monitor switch -s cost -b 2.0   # 预算限制推荐
+claude-intel-monitor switch -s all            # 全部替代方案
+```
+
+内置 5 个替代模型及其评分/成本/社区评价：
+- DeepSeek V3 (8.5/10, $0.50/百万token)
+- GPT-4o (8.2/10, $5.00/百万token)
+- Gemini Pro (7.8/10, $2.50/百万token)
+- Claude Sonnet 4 (9.0/10, $8.00/百万token) — 保底回退
+- Mistral Large (6.5/10, $1.50/百万token)
 
 ## 输出示例
 
@@ -95,66 +165,64 @@ claude-intel-monitor watch --model claude-sonnet-4 --provider anthropic --interv
 └──────────┴────────┴────────┴────────┴───────────┘
 
 ⚠️ code: 轻微下降 6.2% (current=70.0%, baseline=76.2%)
+🔬 质量检测: avg=78.5% | 推理深度=82.0% | thinking跳步=2/30
 ```
 
-## Examples
+## 使用场景
 
-### Scenario 1: Detect a Model Regression
+### 场景 1: 检测模型退化
 
 ```bash
-# Set a baseline when the model is performing well
 claude-intel-monitor baseline --model claude-sonnet-4 --provider anthropic
-
-# A week later, test again and compare
+# ... 一周后 ...
 claude-intel-monitor test --model claude-sonnet-4 --provider anthropic
 ```
 
-If scores drop more than 5% in any category, you get a ⚠️ warning. More than 10% triggers a 🚨 critical alert — time to investigate or switch models.
-
-### Scenario 2: Compare Providers Side-by-Side
+### 场景 2: 对比多个供应商
 
 ```bash
-# Test Claude
 claude-intel-monitor test --model claude-sonnet-4 --provider anthropic
-
-# Test GPT-4o
 claude-intel-monitor test --model gpt-4o --provider openai
-
-# Test DeepSeek
 claude-intel-monitor test --model deepseek-chat --provider deepseek
-
-# View all results in history
-claude-intel-monitor history
+claude-intel-monitor history  # 对比趋势
 ```
 
-Use `claude-intel-monitor history` to see a trend table comparing all tested models over time.
-
-### Scenario 3: Continuous Monitoring (CI/CD)
+### 场景 3: CI/CD 持续监控
 
 ```bash
-# Run every 6 hours in the background
 claude-intel-monitor watch --model claude-sonnet-4 --provider anthropic --interval 6h &
-
-# Or add to a cron job for daily checks
-0 9 * * * claude-intel-monitor test --model claude-sonnet-4 --provider anthropic >> ~/intel-monitor.log
+# 或 cron: 0 9 * * * claude-intel-monitor test --model claude-sonnet-4 >> ~/intel-monitor.log
 ```
 
-Ideal for teams that rely on a specific model and need early warning if its performance silently degrades.
+### 场景 4: 降智时自动切换 (v1.1)
+
+```bash
+# 1. 部署 ZenMux
+claude-intel-monitor zenmux  # 复制 Docker Compose 配置
+
+# 2. 运行 benchmark 检测
+claude-intel-monitor test --model claude-sonnet-4
+
+# 3. 质量 < 30% → 查看替代方案
+claude-intel-monitor switch -s degraded
+
+# 4. 一键切换
+export LLM_PROVIDER=deepseek  # 或通过 ZenMux 自动路由
+```
 
 ## 项目动机
 
-这个工具从 **HermesMade** 项目的真实痛点数据中诞生。在 2026 年 4 月的中国开发者社区扫描中，"Claude/GPT 降智" 是 Top 3 最热话题。我们不想只抱怨，决定做一个可量化的工具。
+这个工具从 **HermesMade** 项目的真实痛点数据中诞生。2026 年 4-6 月的中文开发者社区扫描中，"Claude/GPT 降智" 是 Top 1 最热话题（30+ 篇 CSDN 文章爆发，推理深度下降 67%）。我们不想只抱怨，决定做一个可量化的工具。
 
 ## Also available on ClawHub
 
 [ClawHub](https://clawhub.ai) is an AI-native package registry. You can install and run `claude-intel-monitor` directly from ClawHub:
 
 ```bash
-# Install from ClawHub
 claw install claude-intel-monitor
 ```
 
-All features, benchmarks, and providers work identically. ClawHub also provides built-in API key management and sandboxed execution for worry-free model testing.
+All features, benchmarks, and providers work identically.
 
 ## 许可证
 

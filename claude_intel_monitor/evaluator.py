@@ -9,6 +9,7 @@ from typing import Optional
 import time
 
 from .benchmarks.questions import ALL_QUESTIONS
+from .quality import analyze_quality, aggregate_quality, QualityScore
 
 
 @dataclass
@@ -21,6 +22,7 @@ class QuestionResult:
     response_length: int
     latency_ms: float = 0.0
     response_preview: str = ""
+    quality_score: Optional["QualityScore"] = None
 
 
 @dataclass
@@ -48,6 +50,9 @@ class BenchmarkReport:
     total_latency_ms: float
     degradation_detected: bool = False
     alerts: list = field(default_factory=list)
+    quality_scores: list = field(default_factory=list)  # list of QualityScore per question
+    avg_quality: Optional[float] = None  # 0.0–1.0 average quality across all questions
+    thinking_skip_count: int = 0  # questions where thinking was skipped
 
 
 class IntelEvaluator:
@@ -89,6 +94,9 @@ class IntelEvaluator:
             except Exception:
                 passed = False
 
+        # Quality analysis (v1.1): detect thinking skip, code quality, depth
+        quality_score = analyze_quality(response_text, question.get("category", "unknown"))
+
         return QuestionResult(
             question_id=question.get("id", question.get("question_id", "unknown")),
             category=question.get("category", "unknown"),
@@ -97,6 +105,7 @@ class IntelEvaluator:
             response_length=len(response_text),
             latency_ms=latency_ms,
             response_preview=response_text[:200] + "..." if len(response_text) > 200 else response_text,
+            quality_score=quality_score,
         )
 
     def compute_scores(self, results: list[QuestionResult]) -> BenchmarkReport:
@@ -167,6 +176,22 @@ class IntelEvaluator:
 
         total_latency = sum(r.latency_ms for r in results)
 
+        # Aggregate quality scores (v1.1)
+        quality_scores = [r.quality_score for r in results if r.quality_score is not None]
+        # Build dict for aggregate_quality
+        quality_dict = {}
+        for r in results:
+            if r.quality_score is not None:
+                quality_dict[r.question_id] = r.quality_score
+        quality_agg = aggregate_quality(quality_dict) if quality_dict else None
+        avg_quality = quality_agg.get("avg_quality") if quality_agg else None
+        thinking_skip_count = sum(1 for qs in quality_scores if qs.flags and "thinking_skip" in qs.flags)
+
+        # Quality-aware degradation: if avg quality < 0.3, trigger critical
+        if avg_quality is not None and avg_quality < 0.3:
+            alerts.insert(0, f"🚨 QUALITY: 响应质量极低 ({avg_quality:.1%}) — thinking跳过 {thinking_skip_count}/{len(quality_scores)}题")
+            degradation_detected = True
+
         return BenchmarkReport(
             model="unknown",
             timestamp=time.time(),
@@ -177,6 +202,9 @@ class IntelEvaluator:
             total_latency_ms=total_latency,
             degradation_detected=degradation_detected,
             alerts=alerts,
+            quality_scores=quality_scores,
+            avg_quality=avg_quality,
+            thinking_skip_count=thinking_skip_count,
         )
 
     def build_baseline_from_report(self, report: BenchmarkReport) -> dict:
