@@ -224,6 +224,15 @@ claw install claude-intel-monitor
 
 All features, benchmarks, and providers work identically.
 
+## 🌐 生态系统
+
+| Tool | Description |
+|---|---|
+| [cursor-doctor](https://github.com/minirr890112-byte/cursor-doctor) | Cursor IDE 诊断修复工具 |
+| [model-watch](https://github.com/minirr890112-byte/model-watch) | 轻量级模型退化监控 |
+| [api-cost-compare](https://github.com/minirr890112-byte/api-cost-compare) | LLM API 价格对比 |
+| [openai-ban-tracker](https://github.com/minirr890112-byte/openai-ban-tracker) | OpenAI封号风险检测 |
+
 ## 许可证
 
 MIT
